@@ -17,46 +17,12 @@ from asyncdb.exceptions import (
     _handle_done_tasks,
     default_exception_handler,
 )
+from asyncdb.utils.functions import module_exists
 
-_providers = {}
+_PROVIDERS = {}
 
 # logging system
 import logging
-
-# from logging.config import dictConfig
-#
-# loglevel = logging.INFO
-#
-# logger_config = dict(
-#     version=1,
-#     formatters={
-#         "console": {"format": "%(message)s"},
-#         "file": {
-#             "format": "%(asctime)s: [%(levelname)s]: %(pathname)s: %(lineno)d: \n%(message)s\n"
-#         },
-#         "default": {"format": "[%(levelname)s] %(asctime)s %(name)s: %(message)s"},
-#     },
-#     handlers={
-#         "console": {
-#             "formatter": "console",
-#             "class": "logging.StreamHandler",
-#             "stream": "ext://sys.stdout",
-#             "level": loglevel,
-#         },
-#         "StreamHandler": {
-#             "class": "logging.StreamHandler",
-#             "formatter": "default",
-#             "level": loglevel,
-#         },
-#     },
-#     root={
-#         "handlers": ["StreamHandler"],
-#         "level": loglevel,
-#     },
-# )
-# dictConfig(logger_config)
-# logger = logging.getLogger("AsyncDB")
-
 
 class BasePool(ABC):
     _dsn = ""
@@ -302,7 +268,6 @@ class BaseProvider(ABC):
     async def test_connection(self):
         if self._test_query is None:
             raise NotImplementedError()
-        # logger.debug("{}: Running Test".format(self._provider))
         try:
             return await self.query(self._test_query)
         except Exception as err:
@@ -397,7 +362,11 @@ class BaseProvider(ABC):
 
 
 def registerProvider(provider):
-    global _providers
-    # logging.debug("Registering new Provider %s of type (%s), syntax: %s.", provider.name(), provider.type(), provider.dialect())
-    _providers[provider.type()] = provider
-    # TODO: try to load provider
+    global _PROVIDERS
+    name = provider.name()
+    classpath = f'asyncdb.providers.{name}'
+    try:
+        cls = module_exists(name, classpath)
+        _PROVIDERS[name] = cls
+    except ImportError as err:
+        raise ImportError(err)
