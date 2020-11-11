@@ -2,7 +2,7 @@ aiomcache==0.6.0
 aioodbc==0.3.3
 aiopg==1.0.0
 aioredis==1.3.1
-aiosqlite==0.15.0
+aiosqlite==0.16.0
 appdirs==1.4.4
 async-timeout==4.0.0a3
 -e git+git@github.com:phenobarbital/asyncdb.git@33f715977b2bbb9619902b4d7e336bffbae37700#egg=asyncdb
