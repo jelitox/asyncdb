@@ -9,7 +9,7 @@ import json
 import time
 from datetime import datetime
 import traceback
-
+import uuid
 import asyncpg
 from asyncpg.pgproto import pgproto
 from dateutil.relativedelta import relativedelta
@@ -501,6 +501,40 @@ class pg(SQLProvider):
                 await self._connection.set_builtin_type_codec(
                     "hstore", codec_name="pg_contrib.hstore"
                 )
+
+                def timedelta_decoder(delta: Tuple) -> relativedelta:
+                    return relativedelta(months=delta[0], days=delta[1], microseconds=delta[2])
+
+                def timedelta_encoder(delta: relativedelta):
+                    ndelta = delta.normalized()
+                    return (
+                        ndelta.years * 12 + ndelta.months, ndelta.days,
+                        (ndelta.hours * 3600 + ndelta.minutes * 60 + ndelta.seconds)
+                        * 1_000_000 + ndelta.microseconds
+                    )
+
+                await connection.set_type_codec(
+                    'interval',
+                    schema='pg_catalog',
+                    encoder=timedelta_encoder,
+                    decoder=timedelta_decoder,
+                    format='tuple'
+                )
+
+                def _uuid_encoder(value):
+                    if value:
+                        val = uuid.UUID(value).bytes
+                    else:
+                        val = b''
+                    return val
+
+                await connection.set_type_codec(
+                    "uuid",
+                    encoder=_uuid_encoder,
+                    decoder=lambda u: pgproto.UUID(u),
+                    schema='pg_catalog',
+                    format='binary'
+                )
             if self._connection:
                 if self.init_func:
                     try:
@@ -646,12 +680,12 @@ class pg(SQLProvider):
             self._columns = [a.name for a in self._attributes]
             self._result = await stmt.fetchrow()
         except RuntimeError as err:
-            error = "Runtime on Query Row Error: {}".format(str(err))
+            error = "Query Row Runtime Error: {}".format(str(err))
             raise ProviderError(error)
         except (
             PostgresSyntaxError, UndefinedColumnError, PostgresError
         ) as err:
-            error = "Sentence on Query Row Error: {}".format(str(err))
+            error = "Statement Error: {}".format(str(err))
             raise StatementError(error)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
@@ -661,7 +695,7 @@ class pg(SQLProvider):
             self._loop.call_exception_handler(err)
             raise StatementError(error)
         except Exception as err:
-            error = "Error on Query Row: {}".format(str(err))
+            error = "Query Row Error: {}".format(str(err))
             self._loop.call_exception_handler(err)
             raise Exception(error)
         # finally:
@@ -915,6 +949,31 @@ class pg(SQLProvider):
             error = "Error on Table Copy: {}".format(str(err))
             raise Exception(error)
 
+    """
+    Model Logic:
+    """
+    async def column_info(self, tablename):
+        """Column Info.
+
+        Get Meta information about a table (column name, data type and PK).
+        Useful to build a DataModel from Querying database.
+        Parameters:
+        @tablename: str The name of the table (including schema).
+        """
+        sql = f"SELECT a.attname AS column_name, a.atttypid::regtype AS data_type, \
+        format_type(a.atttypid, a.atttypmod) as format_type, a.attnotnull::boolean as notnull, \
+        coalesce((SELECT true FROM pg_index i WHERE i.indrelid = a.attrelid \
+        AND i.indrelid = a.attrelid AND a.attnum = any(i.indkey) \
+        AND i.indisprimary), false) as is_primary \
+        FROM pg_attribute a WHERE a.attrelid = '{tablename!s}'::regclass \
+        AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum"
+        if not self._connection:
+            await self.connection()
+        try:
+            colinfo = await self._connection.fetch(sql)
+            return colinfo
+        except Exception as err:
+            self._logger.exception(f'Wrong Table information {tablename!s}')
 
 """
 Registering this Provider

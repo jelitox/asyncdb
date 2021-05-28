@@ -4,6 +4,7 @@ import importlib
 import logging
 from asyncdb.providers import BaseProvider
 from asyncdb.utils import colors, SafeDict, Msg
+from asyncdb.utils.functions import _escapeString, _quoteString
 from asyncdb.utils.models import Entity, Model
 from asyncdb.utils.encoders import BaseEncoder
 from asyncdb.exceptions import StatementError
@@ -560,7 +561,7 @@ class SQLProvider(BaseProvider):
         fields = model.columns(model)
         for name, field in fields.items():
             val = getattr(model, field.name)
-            print(name, field, val)
+            # print(name, field, val)
             column = field.name
             datatype = field.type
             value = Entity.toSQL(val, datatype)
@@ -651,6 +652,7 @@ class SQLProvider(BaseProvider):
         columns = ', '.join(cols)
         condition = self._where(fields, **kwargs)
         sql = f'SELECT {columns} FROM {table} {condition}'
+        logging.debug(sql)
         try:
             return await self._connection.fetch(sql)
         except Exception as err:
@@ -685,15 +687,53 @@ class SQLProvider(BaseProvider):
         condition = self._where(fields, **conditions)
         columns = ', '.join(cols)
         sql = f'UPDATE {table} SET {set_fields} {condition}'
-        print(sql)
+        logging.debug(sql)
         try:
             result = await self._connection.execute(sql)
             if result:
                 sql = f'SELECT {columns} FROM {table} {condition}'
+                print('UPDATE ', sql)
                 return await self._connection.fetch(sql)
         except Exception as err:
             print(traceback.format_exc())
             raise Exception('Error on Insert over table {}: {}'.format(model.Meta.name, err))
+
+    async def delete_rows(self, model: Model, conditions: dict, **kwargs):
+        """
+        Deleting some records and returned.
+        """
+        if not self._connection:
+            await self.connection()
+        table = f'{model.Meta.schema}.{model.Meta.name}'
+        source = []
+        pk = {}
+        cols = []
+        fields = model.columns(model)
+        for name, field in fields.items():
+            column = field.name
+            datatype = field.type
+            cols.append(column)
+            if column in kwargs:
+                value = Entity.toSQL(kwargs[column], datatype)
+                source.append('{} = {}'.format(
+                    column,
+                    Entity.escapeLiteral(
+                        value, datatype
+                        )
+                    )
+                )
+        set_fields = ', '.join(source)
+        condition = self._where(fields, **conditions)
+        columns = ', '.join(cols)
+        sql = f'DELETE FROM {table} {condition}'
+        logging.debug(sql)
+        try:
+            result = await self._connection.execute(sql)
+            if result:
+                return result
+        except Exception as err:
+            print(traceback.format_exc())
+            raise Exception('Error on Deleting table {}: {}'.format(model.Meta.name, err))
 
     async def create_rows(self, model: Model, rows: list):
         """
@@ -703,45 +743,55 @@ class SQLProvider(BaseProvider):
             await self.connection()
         table = f'{model.Meta.schema}.{model.Meta.name}'
         fields = model.columns(model)
-        n = len(fields)
-        columns = ', '.join(fields.keys())
-        values = ','.join(['${}'.format(a) for a in range(1, n+1)])
-        primary = 'RETURNING *'
-        insert = f'INSERT INTO {table} ({columns}) VALUES ({values}) {primary}'
-        print(insert)
-        logging.debug(f'INSERT: {insert}')
-        try:
-            stmt = await self._connection.prepare(insert)
-        except Exception as err:
-            print(traceback.format_exc())
-            raise Exception(
-                'Exception creating Prepared Sentence {}: {}'.format(
-                    model.Meta.name, err)
-                )
         results = []
+        stmt = None
         for row in rows:
             source = []
             pk = []
+            cols = []
             for col, field in fields.items():
                 if col not in row:
                     # field doesnt exists
                     default = field.default
-                    if default:
+                    if default is not None:
                         if callable(default):
                             source.append(default())
                         else:
                             source.append(default)
+                        cols.append(col)
                     else:
-                        if field.required is True or field.primary_key is True:
+                        # val = getattr(model, col)
+                        # if val is not None:
+                        #     source.append(val)
+                        # elif field.required is True or field.primary_key is True:
+                        if field.required is True:
                             raise StatementError(
                                 f'Missing Required Field: {col}'
                             )
-                        else:
-                            source.append(None)
                 else:
-                    source.append(row[col])
+                    try:
+                        val = row[col]
+                        source.append(val)
+                        cols.append(col)
+                    except (KeyError, TypeError):
+                        continue
                 if field.primary_key is True:
                     pk.append(col)
+            if not stmt:
+                columns = ', '.join(cols)
+                n = len(cols)
+                values = ','.join(['${}'.format(a) for a in range(1, n+1)])
+                primary = 'RETURNING *'
+                insert = f'INSERT INTO {table} ({columns}) VALUES ({values}) {primary}'
+                logging.debug(f'INSERT: {insert}')
+                try:
+                    stmt = await self._connection.prepare(insert)
+                except Exception as err:
+                    print(traceback.format_exc())
+                    raise Exception(
+                        'Exception creating Prepared Sentence {}: {}'.format(
+                            model.Meta.name, err)
+                        )
             try:
                 result = await stmt.fetchrow(*source, timeout=2)
                 logging.debug(stmt.get_statusmsg())

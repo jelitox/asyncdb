@@ -11,7 +11,7 @@ from setuptools import find_packages, setup
 setup(
     name="asyncdb",
     version=open("VERSION").read().strip(),
-    python_requires=">=3.7.0",
+    python_requires=">=3.8.0",
     url="https://github.com/phenobarbital/asyncdb",
     description="Asyncio Datasource library",
     long_description="Asynchronous library for data source connections, \
@@ -20,7 +20,7 @@ setup(
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Build Tools",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
     ],
     author="Jesus Lara",
     author_email="jlara@trocglobal.com",
@@ -29,19 +29,22 @@ setup(
         "wheel==0.36.2",
         "Cython==0.29.21",
         "numpy==1.19.4",
-        "asyncio==3.4.3"
+        "asyncio==3.4.3",
+        "cchardet==2.1.7"
     ],
     install_requires=[
         "wheel==0.36.2",
         "Cython==0.29.21",
         "numpy==1.19.4",
-        "asyncpg==0.21.0",
+        "asyncpg==0.22.0",
         "asyncio==3.4.3",
         "PyDrive==1.3.1",
         "uvloop==0.14.0",
+        "cryptography==3.4.7",
         "objectpath==0.6.1",
         "MarkupSafe==1.1.1",
-        "jinja2==2.11.2",
+        "jinja2==2.11.3",
+        "requests==2.25.1",
         "jsonpath-rw==1.4.0",
         "jsonpath-rw-ext==1.2.2",
         "dateparser==1.0.0",
@@ -59,11 +62,12 @@ setup(
         "redis==3.5.3",
         "aioredis==1.3.1",
         "rethinkdb==2.4.8",
-        "openpyxl==3.0.5",
         "lxml>=4.6.2",
         "isodate==0.6.0",
+        "pandas==1.2.1",
         "dask==2.30.0",
-        "pandas==1.1.4",
+        "xlrd==1.2.0",
+        "openpyxl==3.0.6",
         "hiredis==1.1.0",
         "aiomcache==0.6.0",
         "aiosqlite==0.15.0",
@@ -75,6 +79,7 @@ setup(
         "attrs==20.2.0",
         "aioodbc==0.3.3",
         "pyodbc==4.0.30",
+        "cchardet==2.1.7",
         "aiocassandra==2.0.1",
         "cassandra-driver==3.24.0",
         "aioinflux[pandas]",
@@ -87,7 +92,7 @@ setup(
         "aredis==1.1.8",
     ],
     extra_requires=[
-        'cryptography>=3.2'
+        'cryptography==3.4.6'
     ],
     tests_require=[
         'pytest>=5.4.0',

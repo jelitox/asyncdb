@@ -22,6 +22,7 @@ from asyncdb import AsyncDB
 from asyncdb.utils import colors, SafeDict, Msg
 from asyncdb.utils.encoders import DefaultEncoder, BaseEncoder
 from asyncdb.exceptions import NoDataFound
+from asyncdb.providers import BaseProvider
 #from navigator.conf import DATABASES
 import typing
 from typing import (
@@ -61,6 +62,33 @@ DB_TYPES = {
     dict: 'jsonb',
     Dict: 'jsonb',
     List: 'jsonb'
+}
+
+MODEL_TYPES = {
+ "boolean": bool,
+ "integer": int,
+ "bigint": np.int64,
+ "float": float,
+ "character varying": str,
+ "string": str,
+ "varchar": str,
+ "byte": bytes,
+ "bytea": bytes,
+ "Array": list,
+ "hstore": dict,
+ "character varying[]": list,
+ "numeric": Decimal,
+ "date": datetime.date,
+ "timestamp with time zone": datetime.datetime,
+ "time": datetime.time,
+ "timestamp without time zone": datetime.timedelta,
+ "uuid": uuid.UUID,
+ "json": dict,
+ "jsonb": dict,
+ "text": str,
+ "serial": int,
+ "bigserial": int,
+ "inet": str
 }
 
 JSON_TYPES = {
@@ -231,10 +259,7 @@ class Field(ff):
             self._default = default
             self._default_factory = MISSING
         else:
-            if notnull is True:
-                # TODO: add a default not-null value
-                args['default'] = ''
-            else:
+            if notnull is False:
                 if not factory:
                     factory = MISSING
                 # get the annotation of field
@@ -303,6 +328,41 @@ def _dc_method_setattr(self, name: str, value: Any, *args, **kwargs) -> None:
                     setattr(self, name, value)
             except Exception as err:
                 print(err)
+
+
+def Column(
+        *,
+        default: Any = None,
+        init: bool = True,
+        primary_key: bool = False,
+        notnull: bool = False,
+        required: bool = False,
+        factory: Callable = MISSING,
+        min: Union[int, float, Decimal] = None,
+        max: Union[int, float, Decimal] = None,
+        validator: Callable = None,
+        db_type: str = None,
+        **kwargs
+    ):
+    """Column.
+
+    Column Function that returns a Field() object
+    """
+    if default is not None and factory is not MISSING:
+        raise ValueError('Cannot specify both default and default_factory')
+    return Field(
+        default=default,
+        init=init,
+        primary_key=primary_key,
+        notnull=notnull,
+        required=required,
+        factory=factory,
+        db_type=db_type,
+        min=min,
+        max=max,
+        validator=validator,
+        **kwargs
+    )
 
 
 def create_dataclass(
@@ -429,7 +489,7 @@ class ModelMeta(type):
         if 'driver' in ls:
             if cls.Meta.connection is None:
                 if cls.Meta.driver is not None:
-                    Msg('Getting Connection', 'DEBUG')
+                    # Msg('Getting Connection', 'DEBUG')
                     if cls.Meta.dsn is not None:
                         cls.get_connection(cls, dsn=cls.Meta.dsn)
                     else:
@@ -641,7 +701,7 @@ class Model(metaclass=ModelMeta):
         """
         driver = self.Meta.driver if self.Meta.driver else 'pg'
         if driver:
-            logging.debug('Getting data from Database: {}'.format(driver))
+            # logging.debug('Getting data from Database: {}'.format(driver))
             # working with app labels
             try:
                 app = self.Meta.app_label if self.Meta.app_label else None
@@ -667,7 +727,7 @@ class Model(metaclass=ModelMeta):
                 params = self.Meta.credentials
                 self.Meta.connection = AsyncDB(driver, params=params)
             elif dsn is not None:
-                print('HERE ', dsn)
+                # print('HERE ', dsn)
                 self.Meta.connection = AsyncDB(driver, dsn=dsn)
             return self.Meta.connection
 
@@ -856,13 +916,21 @@ class Model(metaclass=ModelMeta):
 
 
     @classmethod
-    async def remove(cls, **kwargs):
+    async def remove(cls, conditions: dict = {}, **kwargs):
         if not cls.Meta.connection:
             cls.get_connection(cls)
         async with await cls.Meta.connection.connection() as conn:
-            await conn.test_connection()
-            prepared, error = await conn.prepare('SELECT * FROM walmart.stores')
-            print(conn.get_columns())
+            result = None
+            try:
+                result = await cls.Meta.connection.delete_rows(
+                    model=cls,
+                    conditions=conditions,
+                    **kwargs
+                )
+                return result
+            except Exception as err:
+                print(traceback.format_exc())
+                raise Exception('Error Deleting Table {}: {}'.format(cls.Meta.name, err))
 
     @classmethod
     async def update(cls, conditions: dict = {}, **kwargs):
@@ -913,92 +981,46 @@ class Model(metaclass=ModelMeta):
         m.app_label = schema
         cls.Meta = m
         return cls
-    #
-    # @classmethod
-    # def schema(cls, type: str = 'json') -> str:
-    #     result = None
-    #     name = cls.__name__
-    #     schema = cls.Meta.schema if cls.Meta.schema is not None else ''
-    #     columns = {}
-    #     try:
-    #         if type == 'json':
-    #             for name, field in cls.columns():
-    #                 key = field.name
-    #                 type = field.type
-    #                 columns[key] = {
-    #                     "name": key,
-    #                     "type": JSON_TYPES[type]
-    #                 }
-    #             doc = {
-    #                 "name": name,
-    #                 "description": cls.__doc__.strip('\n').strip(),
-    #                 "schema": schema,
-    #                 "fields": columns
-    #             }
-    #             result = to_json.dumps(doc)
-    #         elif type == 'sql' or type == 'SQL':
-    #             # TODO: using lexers to different types of SQL
-    #             table = cls.Meta.name if cls.Meta.name is not None else name
-    #             doc = f'CREATE TABLE IF NOT EXISTS {schema}.{table} (\n'
-    #             cols = []
-    #             pk = []
-    #             for name, field in cls.columns().items():
-    #                 print(name, field)
-    #                 key = field.name
-    #                 default = None
-    #                 try:
-    #                     default = field.metadata['db_default']
-    #                 except KeyError:
-    #                     if field.default:
-    #                         default = f'{field.default!r}'
-    #                 default = f'DEFAULT {default!s}' if isinstance(default, (str, int)) else ''
-    #                 type = DB_TYPES[field.type]
-    #                 nn = 'NOT NULL' if field.required is True else ''
-    #                 if field.primary_key is True:
-    #                     pk.append(key)
-    #                 cols.append(f' {key} {type} {nn} {default}')
-    #             doc = "{}{}".format(doc, ",\n".join(cols))
-    #             if len(pk) >= 1:
-    #                 primary = ", ".join(pk)
-    #                 cname = f'pk_{schema}_{table}_pkey'
-    #                 doc = "{},\n{}".format(doc, f'CONSTRAINT {cname} PRIMARY KEY ({primary})')
-    #             doc = doc + '\n);'
-    #             result = doc
-    #     finally:
-    #         return result
+
+    @classmethod
+    async def makeModel(
+            cls,
+            name: str,
+            schema: str = 'public',
+            fields: list = [],
+            db: BaseProvider = None
+        ):
+        """
+        Make Model.
+
+        Making a model from field tuples, a JSON schema or a Table.
+        """
+        tablename = '{}.{}'.format(schema, name)
+        if not fields: # we need to look in to it.
+            colinfo = await db.column_info(tablename)
+            fields = []
+            for column in colinfo:
+                tp = column['data_type']
+                col = Field(
+                    primary_key=column['is_primary'],
+                    notnull=column['notnull'],
+                    db_type=column['format_type']
+                )
+                # get dtype from database type:
+                try:
+                    dtype = MODEL_TYPES[tp]
+                except KeyError:
+                    dtype = str
+                fields.append((column['column_name'], dtype, col))
+        cls = make_dataclass(name, fields, bases=(Model,))
+        m = Meta()
+        m.name = name
+        m.schema = schema
+        m.app_label = schema
+        if db:
+            m.connection = db
+        m.frozen = False
+        cls.Meta = m
+        return cls
 
     Meta = Meta
-
-def Column(
-        *,
-        default: Any = None,
-        init: bool = True,
-        primary_key: bool = False,
-        notnull: bool = False,
-        required: bool = False,
-        factory: Callable = MISSING,
-        min: Union[int, float, Decimal] = None,
-        max: Union[int, float, Decimal] = None,
-        validator: Callable = None,
-        db_type: str = None,
-        **kwargs
-    ):
-    """Column.
-
-    Column Function that returns a Field() object
-    """
-    if default is not None and factory is not MISSING:
-        raise ValueError('Cannot specify both default and default_factory')
-    return Field(
-        default=default,
-        init=init,
-        primary_key=primary_key,
-        notnull=notnull,
-        required=required,
-        factory=factory,
-        db_type=db_type,
-        min=min,
-        max=max,
-        validator=validator,
-        **kwargs
-    )
