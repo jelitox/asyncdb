@@ -39,6 +39,19 @@ async def test_pool_by_dsn(event_loop):
     result, error = await db.test_connection('helloworld')
     pytest.assume(not error)
     pytest.assume(result == 'helloworld')
+    user = {
+        "Name": "Pradeep",
+        "Company": "SCTL",
+        "Address": "Mumbai",
+        "Location": "RCP",
+    }
+    await db.set_hash("user", user)
+    pytest.assume(await db.exists("user") == 1)
+    result = await db.get_hash("user")
+    # print(result, await db.exists("user"))
+    pytest.assume(result["Name"] == "Pradeep")
+    await db.delete("user")
+    pytest.assume(await db.exists("user") == 0)
     await pool.close()
     assert pool.is_closed() is True
 
@@ -77,9 +90,25 @@ async def test_connect(driver, event_loop):
     await db.close()
     assert db.is_closed() is True
 
-async def test_connection(conn):
-    #await conn.connection()
-    pytest.assume(conn.is_connected() is True)
-    result, error = await conn.test_connection('bigtest')
-    pytest.assume(not error)
-    assert result == 'bigtest'
+@pytest.mark.parametrize("driver", [
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER),
+    (DRIVER)
+])
+async def test_context(driver, event_loop):
+    db = AsyncDB(driver, params=params, loop=event_loop)
+    async with await db.connection() as conn:
+        pytest.assume(conn.is_connected() is True)
+        result, error = await db.test_connection()
+        pytest.assume(not error)
+        result, error = await db.test_connection('bigtest')
+        pytest.assume(not error)
+        pytest.assume(result == 'bigtest')
+    assert db.is_closed() is True

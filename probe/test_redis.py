@@ -19,8 +19,9 @@ rd = AsyncPool("redis", dsn=redis_url, loop=loop)
 # rd = redisPool(dsn=redis_url, loop=loop)
 loop.run_until_complete(rd.connect())
 
-# rd = AsyncDB('redis', dsn=redis_url, loop=loop)
-# loop.run_until_complete(rd.connection())
+ot = AsyncDB('redis', dsn=redis_url, loop=loop)
+loop.run_until_complete(ot.connection())
+
 
 
 async def test_redis(conn):
@@ -43,13 +44,22 @@ async def test_redis(conn):
     if await conn.exists("user"):
         print(await conn.get_hash("user"))
         await conn.delete("user")
-    for lp in range(10000):
-        print(f'Test number {lp}')
-        async with await rd.acquire() as conn:
-            await conn.ping()
-            await conn.execute("set", "Test1", "UltraTest")
-            await conn.delete("Test1")
+    # for lp in range(10000):
+    #     print(f'Test number {lp}')
+    #     async with await rd.acquire() as conn:
+    #         await conn.ping()
+    #         await conn.execute("set", "Test1", "UltraTest")
+    #         await conn.delete("Test1")
+    # test the connector
+    db = AsyncDB('redis', dsn=redis_url, loop=loop)
+    async with await db.connection() as conn:
+        print(conn.is_connected())
+        result, error = await db.test_connection()
+        print(result, error)
+        result, error = await db.test_connection('bigtest')
+    print(db.is_closed())
     print('Ending ...')
+
 
 try:
     print("Connected: {}".format(rd.is_connected()))
@@ -61,8 +71,13 @@ try:
     r = loop.run_until_complete(rd.acquire())
     loop.run_until_complete(r.execute("set", "my-key", "UltraKey"))
     value = loop.run_until_complete(r.execute("get", "my-key"))
+    # loop.run_until_complete(rd.release(r))
     print("new value:", value)
     loop.run_until_complete(test_redis(r))
 finally:
     loop.run_until_complete(rd.close())
-    loop.close()
+    print('END 1')
+    loop.run_until_complete(ot.close())
+    print('END 2')
+    loop.stop()
+    print('END LOOP')

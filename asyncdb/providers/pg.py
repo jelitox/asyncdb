@@ -57,6 +57,9 @@ from asyncdb.providers.sql import SQLProvider, baseCursor
 max_cached_statement_lifetime = 600
 max_cacheable_statement_size = 1024 * 15
 
+class NAVConnection(asyncpg.Connection):
+    def _get_reset_query(self):
+        return None
 
 class pgPool(BasePool):
     _max_queries = 100
@@ -64,10 +67,9 @@ class pgPool(BasePool):
     _server_settings = {}
     init_func = None
     setup_func = None
-    _max_clients = 1500
-    _min_size = 5
+    _max_clients = 300
+    _min_size = 10
     application_name = "Navigator"
-    _numeric_as_float: bool = False
 
     def __init__(self, dsn="", loop=None, params={}, **kwargs):
         super(pgPool, self).__init__(dsn=dsn, loop=loop, params=params, **kwargs)
@@ -84,6 +86,20 @@ class pgPool(BasePool):
 
     def get_event_loop(self):
         return self._loop
+
+    """
+    Context magic Methods
+    """
+
+    async def __aenter__(self) -> "BasePool":
+        if not self._pool:
+            await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        # clean up anything you need to clean up
+        await self.release(self._connection)
+        self._connection = None
 
     async def setup_connection(self, connection):
         if self.setup_func:
@@ -110,27 +126,6 @@ class pgPool(BasePool):
         await connection.set_builtin_type_codec(
             "hstore", codec_name="pg_contrib.hstore"
         )
-
-        def timedelta_decoder(delta: Tuple) -> relativedelta:
-            return relativedelta(months=delta[0], days=delta[1], microseconds=delta[2])
-
-        def timedelta_encoder(delta: relativedelta):
-            ndelta = delta.normalized()
-            return (
-                ndelta.years * 12 + ndelta.months,
-                ndelta.days,
-                (ndelta.hours * 3600 + ndelta.minutes * 60 + ndelta.seconds) * 1_000_000
-                + ndelta.microseconds,
-            )
-
-        if self._numeric_as_float is True:
-            await connection.set_type_codec(
-                "interval",
-                schema="pg_catalog",
-                encoder=timedelta_encoder,
-                decoder=timedelta_decoder,
-                format="tuple",
-            )
 
         def _uuid_encoder(value):
             if value:
@@ -166,7 +161,8 @@ class pgPool(BasePool):
                 "application_name": self.application_name,
                 "idle_in_transaction_session_timeout": "3600",
                 "tcp_keepalives_idle": "3600",
-                "max_parallel_workers": "16",
+                "max_parallel_workers": "48",
+                "jit": "off"
             }
             server_settings = {**server_settings, **self._server_settings}
             self._pool = await asyncpg.create_pool(
@@ -174,15 +170,14 @@ class pgPool(BasePool):
                 max_queries=self._max_queries,
                 min_size=self._min_size,
                 max_size=self._max_clients,
-                max_inactive_connection_lifetime=100,
-                timeout=5,
+                max_inactive_connection_lifetime=3600,
+                timeout=10,
                 command_timeout=self._timeout,
                 init=self.init_connection,
                 setup=self.setup_connection,
                 loop=self._loop,
-                max_cached_statement_lifetime=max_cached_statement_lifetime,
-                max_cacheable_statement_size=max_cacheable_statement_size,
                 server_settings=server_settings,
+                connection_class=NAVConnection
             )
         except TooManyConnectionsError as err:
             print("Too Many Connections Error: {}".format(str(err)))
@@ -280,12 +275,12 @@ class pgPool(BasePool):
         Close Pool Connection
     """
 
-    async def wait_close(self, gracefully=True, timeout=10):
+    async def wait_close(self, gracefully=True, timeout=1):
         if self._pool:
             # try to closing main connection
             try:
                 if self._connection:
-                    await self._pool.release(self._connection, timeout=2)
+                    await self._pool.release(self._connection, timeout=timeout)
                     self._connection = None
             except (InternalClientError, InterfaceError) as err:
                 raise ProviderError("Release Interface Error: {}".format(str(err)))
@@ -294,13 +289,7 @@ class pgPool(BasePool):
             try:
                 if gracefully:
                     await self._pool.expire_connections()
-                    close = asyncio.create_task(self._pool.close())
-                    # close.add_done_callback(_handle_done_tasks)
-                    try:
-                        await asyncio.wait_for(close, timeout=timeout, loop=self._loop)
-                    except asyncio.exceptions.TimeoutError as err:
-                        # print(traceback.format_exc())
-                        pass
+                    await self._pool.close()
                 # # until end, close the pool correctly:
                 self._pool.terminate()
             except Exception as err:
@@ -317,7 +306,7 @@ class pgPool(BasePool):
     async def close(self):
         try:
             if self._connection:
-                await self._pool.release(self._connection, timeout=2)
+                await self._pool.release(self._connection, timeout=1)
                 self._connection = None
         except InterfaceError as err:
             raise ProviderError("Release Interface Error: {}".format(str(err)))
@@ -325,12 +314,7 @@ class pgPool(BasePool):
             raise ProviderError("Release Error: {}".format(str(err)))
         try:
             await self._pool.expire_connections()
-            close = asyncio.create_task(self._pool.close())
-            # close.add_done_callback(_handle_done_tasks)
-            try:
-                await asyncio.wait_for(close, timeout=2, loop=self._loop)
-            except asyncio.exceptions.TimeoutError as err:
-                pass
+            await self._pool.close()
         except Exception as err:
             print("Pool Closing Error: {}".format(str(err)))
         finally:
@@ -339,7 +323,7 @@ class pgPool(BasePool):
 
     def terminate(self, gracefully=True):
         self._loop.run_until_complete(
-            self.wait_close(gracefully=gracefully, timeout=10)
+            self.wait_close(gracefully=gracefully, timeout=1)
         )
 
     """
@@ -427,12 +411,26 @@ class pg(SQLProvider):
     def terminate(self):
         self._loop.run_until_complete(self.close())
 
+    async def is_in_transaction(self):
+        return self._connection.is_in_transaction()
+
+    def is_connected(self):
+        try:
+            self._connected = not (self._connection.is_closed())
+            return self._connected
+        except Exception as err:
+            self._logger.exception(err)
+            return False
+
     async def connection(self):
+        """connection.
+
+        Get an asyncpg connection
         """
-        Get a connection
-        """
-        if self._connection:
-            return self
+        if self._connection is not None:
+            if not self._connection.is_closed():
+                self._connected = True
+                return self
 
         self._connection = None
         self._connected = False
@@ -446,9 +444,10 @@ class pg(SQLProvider):
 
         server_settings = {
             "application_name": self.application_name,
-            "idle_in_transaction_session_timeout": "600",
-            "tcp_keepalives_idle": "600",
-            "max_parallel_workers": "16",
+            "idle_in_transaction_session_timeout": "3600",
+            "tcp_keepalives_idle": "3600",
+            "max_parallel_workers": "24",
+            "jit": "off"
         }
         server_settings = {**server_settings, **self._server_settings}
 
@@ -463,6 +462,7 @@ class pg(SQLProvider):
                     max_cached_statement_lifetime=max_cached_statement_lifetime,
                     max_cacheable_statement_size=max_cacheable_statement_size,
                     server_settings=server_settings,
+                    connection_class=NAVConnection
                 )
                 await self._connection.set_type_codec(
                     "json", encoder=_encoder, decoder=_decoder, schema="pg_catalog"
@@ -473,37 +473,6 @@ class pg(SQLProvider):
                 await self._connection.set_builtin_type_codec(
                     "hstore", codec_name="pg_contrib.hstore"
                 )
-                await connection.set_type_codec(
-                    "interval",
-                    schema="pg_catalog",
-                    encoder=timedelta_encoder,
-                    decoder=timedelta_decoder,
-                    format="tuple",
-                )
-                
-                if self._numeric_as_float is True:
-                    await connection.set_type_codec(
-                        "interval",
-                        schema="pg_catalog",
-                        encoder=timedelta_encoder,
-                        decoder=timedelta_decoder,
-                        format="tuple",
-                    )
-
-                def timedelta_decoder(delta: Tuple) -> relativedelta:
-                    return relativedelta(
-                        months=delta[0], days=delta[1], microseconds=delta[2]
-                    )
-
-                def timedelta_encoder(delta: relativedelta):
-                    ndelta = delta.normalized()
-                    return (
-                        ndelta.years * 12 + ndelta.months,
-                        ndelta.days,
-                        (ndelta.hours * 3600 + ndelta.minutes * 60 + ndelta.seconds)
-                        * 1_000_000
-                        + ndelta.microseconds,
-                    )
 
                 def _uuid_encoder(value):
                     if value:
@@ -520,14 +489,15 @@ class pg(SQLProvider):
                     format="binary",
                 )
             if self._connection:
-                if self.init_func:
+                self._connected = True
+                if self.init_func is not None:
                     try:
                         await self.init_func(self._connection)
                     except Exception as err:
                         print("Error on Init Connection: {}".format(err))
                         pass
-                self._connected = True
                 self._initialized_on = time.time()
+                self._logger.debug(f'Initialized on: {self._initialized_on}')
         except TooManyConnectionsError as err:
             raise TooManyConnections("Too Many Connections Error: {}".format(str(err)))
         except ConnectionDoesNotExistError as err:
