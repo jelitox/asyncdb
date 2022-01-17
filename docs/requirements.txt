@@ -5,4 +5,4 @@ coverage[toml]==5.1
 flit==3.0.0
 mypy==0.910
 pylint==2.9.3
-sphinx==4.1.1
+sphinx==4.4.0
