@@ -206,20 +206,20 @@ class pgPool(BasePool):
             )
         except ConnectionRefusedError as err:
             raise ProviderError(
-                "Unable to connect to database, connection Refused: {}".format(
+                message="Unable to connect to database, connection Refused: {}".format(
                     str(err))
             )
         except ConnectionDoesNotExistError as err:
-            raise ProviderError("Connection Error: {}".format(str(err)))
+            raise ProviderError(message="Connection Error: {}".format(str(err)))
         except InternalClientError as err:
-            raise ProviderError("Internal Error: {}".format(str(err)))
+            raise ProviderError(message="Internal Error: {}".format(str(err)))
         except InterfaceError as err:
-            raise ProviderError("Interface Error: {}".format(str(err)))
+            raise ProviderError(message="Interface Error: {}".format(str(err)))
         except InterfaceWarning as err:
             print("Interface Warning: {}".format(str(err)))
             return False
         except Exception as err:
-            raise ProviderError("Unknown Error: {}".format(str(err)))
+            raise ProviderError(message="Unknown Error: {}".format(str(err)))
         finally:
             return self
 
@@ -271,7 +271,9 @@ class pgPool(BasePool):
             await self._pool.release(conn, timeout=timeout)
             return True
         except InterfaceError as err:
-            raise ProviderError(f"Release Interface Error: {err}")
+            raise ProviderError(
+                message=f"Release Interface Error: {err}"
+            )
         except InternalClientError as err:
             self._logger.debug(
                 f"Connection already released, \
@@ -295,9 +297,12 @@ class pgPool(BasePool):
                     self._connection = None
             except (InternalClientError, InterfaceError) as err:
                 raise ProviderError(
-                    "Release Interface Error: {}".format(str(err)))
+                    message="Release Interface Error: {}".format(str(err))
+                )
             except Exception as err:
-                raise ProviderError("Release Error: {}".format(str(err)))
+                raise ProviderError(
+                    message="Release Error: {}".format(str(err))
+                )
             try:
                 if gracefully:
                     loop = asyncio.get_running_loop()
@@ -318,7 +323,9 @@ class pgPool(BasePool):
             except Exception as err:
                 error = f"Pool Exception: {err.__class__.__name__}: {err}"
                 print("Pool Error: {}".format(error))
-                raise ProviderError("Pool Error: {}".format(error))
+                raise ProviderError(
+                    message="Pool Error: {}".format(error)
+                )
             finally:
                 self._connected = False
 
@@ -331,9 +338,13 @@ class pgPool(BasePool):
                 await self._pool.release(self._connection, timeout=1)
                 self._connection = None
         except InterfaceError as err:
-            raise ProviderError("Release Interface Error: {}".format(str(err)))
+            raise ProviderError(
+                message="Release Interface Error: {}".format(str(err))
+            )
         except Exception as err:
-            raise ProviderError("Release Error: {}".format(str(err)))
+            raise ProviderError(
+                message="Release Error: {}".format(str(err))
+            )
         try:
             await self._pool.expire_connections()
             await self._pool.close()
@@ -354,9 +365,12 @@ class pgPool(BasePool):
             return result
         except InterfaceError as err:
             raise ProviderError(
-                "Execute Interface Error: {}".format(str(err)))
+                message="Execute Interface Error: {}".format(str(err))
+            )
         except Exception as err:
-            raise ProviderError("Execute Error: {}".format(str(err)))
+            raise ProviderError(
+                message="Execute Error: {}".format(str(err))
+            )
 
 
 class pgCursor(SQLCursor):
@@ -413,15 +427,17 @@ class pg(SQLProvider, DBCursorBackend):
                         else:
                             await self._connection.close(timeout=timeout)
                     except InterfaceError as err:
-                        raise ProviderError("Close Error: {}".format(str(err)))
+                        raise ProviderError(message="Close Error: {}".format(str(err)))
                     except Exception as err:
                         await self._connection.terminate()
                         self._connection = None
                         raise ProviderError(
-                            "Connection Error, Terminated: {}".format(str(err))
+                            message="Connection Error, Terminated: {}".format(str(err))
                         )
         except Exception as err:
-            raise ProviderError("Close Error: {}".format(str(err)))
+            raise ProviderError(
+                message="Close Error: {}".format(str(err))
+            )
         finally:
             self._connection = None
             self._connected = False
@@ -534,13 +550,13 @@ class pg(SQLProvider, DBCursorBackend):
                 "Too Many Connections Error: {}".format(str(err)))
         except ConnectionDoesNotExistError as err:
             print("Connection Error: {}".format(str(err)))
-            raise ProviderError("Connection Error: {}".format(str(err)))
+            raise ProviderError(message="Connection Error: {}".format(str(err)))
         except InternalClientError as err:
             print("Internal Error: {}".format(str(err)))
-            raise ProviderError("Internal Error: {}".format(str(err)))
+            raise ProviderError(message="Internal Error: {}".format(str(err)))
         except InterfaceError as err:
             print("Interface Error: {}".format(str(err)))
-            raise ProviderError("Interface Error: {}".format(str(err)))
+            raise ProviderError(message="Interface Error: {}".format(str(err)))
         except InterfaceWarning as err:
             print("Interface Warning: {}".format(str(err)))
         finally:
@@ -562,7 +578,7 @@ class pg(SQLProvider, DBCursorBackend):
                 else:
                     await self._connection.close(timeout=5)
         except (InterfaceError, RuntimeError) as err:
-            raise ProviderError("Release Interface Error: {}".format(str(err)))
+            raise ProviderError(message="Release Interface Error: {}".format(str(err)))
         finally:
             self._connected = False
             self._connection = None
@@ -592,43 +608,43 @@ class pg(SQLProvider, DBCursorBackend):
                 self._columns = []
         except FatalPostgresError as err:
             error = "Fatal Runtime Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except PostgresSyntaxError as err:
             error = "Sentence Syntax Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except PostgresError as err:
             error = "PostgreSQL Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except RuntimeError as err:
             error = "Prepare Runtime Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except Exception as err:
             error = "Unknown Error: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         finally:
             return [self._prepared, error]
 
-    async def query(self, sentence: Union[str, List], **kwargs):
+    async def query(self, sentence: Union[str, List], *args):
         self._result = None
         error = None
         await self.valid_operation(sentence)
         try:
             self.start_timing()
-            self._result = await self._connection.fetch(sentence)
+            self._result = await self._connection.fetch(sentence, *args)
             if not self._result:
                 return [None, "Data was not found"]
         except RuntimeError as err:
             error = "Runtime Error: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
             error = "Sentence Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
         ) as err:
             error = "Invalid Statement Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except Exception as err:
             error = "Error on Query: {}".format(str(err))
             raise Exception(error)
@@ -636,7 +652,7 @@ class pg(SQLProvider, DBCursorBackend):
             self.generated_at()
             return await self._serializer(self._result, error)
 
-    async def queryrow(self, sentence=""):
+    async def queryrow(self, sentence: str, *args):
         self._result = None
         error = None
         await self.valid_operation(sentence)
@@ -644,20 +660,20 @@ class pg(SQLProvider, DBCursorBackend):
             stmt = await self._connection.prepare(sentence)
             self._attributes = stmt.get_attributes()
             self._columns = [a.name for a in self._attributes]
-            self._result = await stmt.fetchrow()
+            self._result = await stmt.fetchrow(*args)
         except RuntimeError as err:
             error = "Query Row Runtime Error: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
             error = "Statement Error: {}".format(str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
         ) as err:
             error = "Invalid Statement Error: {}".format(str(err))
             self._loop.call_exception_handler(err)
-            raise StatementError(error)
+            raise StatementError(message=error)
         except Exception as err:
             error = "Query Row Error: {}".format(str(err))
             self._loop.call_exception_handler(err)
@@ -674,16 +690,16 @@ class pg(SQLProvider, DBCursorBackend):
         self.start_timing()
         await self.valid_operation(sentence)
         try:
-            result = await self._connection.execute(sentence)
+            result = await self._connection.execute(sentence, *args)
         except InterfaceWarning as err:
             error = "Interface Warning: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except asyncpg.exceptions.DuplicateTableError as err:
             error = err
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except Exception as err:
             error = "Error on Execute: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         finally:
             self.generated_at()
             return await self._serializer(result, error)
@@ -696,7 +712,7 @@ class pg(SQLProvider, DBCursorBackend):
             result = await self._connection.executemany(sentence, *args)
         except InterfaceWarning as err:
             error = "Interface Warning: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except Exception as err:
             error = "Error on Execute: {}".format(str(err))
             raise Exception(error)
@@ -705,49 +721,80 @@ class pg(SQLProvider, DBCursorBackend):
 
     executemany = execute_many
 
-    async def fetch_all(self, sentence: str = ""):
+    async def fetch_all(self, sentence: str, *args):
         self._result = None
         await self.valid_operation(sentence)
         try:
             self.start_timing()
-            self._result = await self._connection.fetch(sentence)
+            stmt = await self._connection.prepare(sentence)
+            self._attributes = stmt.get_attributes()
+            self._columns = [a.name for a in self._attributes]
+            # self._result = await self._connection.fetch(sentence)
+            self._result = await stmt.fetch(*args)
             if not self._result:
                 return []
-        except RuntimeError as err:
-            raise ProviderError(f"Sentence Error: {err}")
-        except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
-            raise StatementError(f"Sentence Error: {err}")
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
         ) as err:
-            raise StatementError(f"Invalid Statement Error: {err}")
+            raise StatementError(message=f"Invalid Statement Error: {err}")
+        except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
+            raise StatementError(message=f"Sentence Error: {err}")
+        except RuntimeError as err:
+            raise ProviderError(message=f"Sentence Error: {err}")
         except Exception as err:
             raise Exception(f"Error on Query: {err}")
         finally:
             self.generated_at()
             return self._result
 
-    async def fetch_one(self, sentence: str = ""):
-        self._result = None
+    async def fetch_one(self, sentence: str, *args):
+        result = None
         await self.valid_operation(sentence)
         try:
-            stmt = await self._connection.prepare(sentence)
-            self._attributes = stmt.get_attributes()
-            self._columns = [a.name for a in self._attributes]
-            self._result = await stmt.fetchrow()
-        except RuntimeError as err:
-            raise ProviderError(f"Sentence Error: {err}")
-        except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
-            raise StatementError(f"Sentence Error: {err}")
+            result = await self._connection.fetchrow(sentence, *args)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
         ) as err:
-            raise StatementError(f"Invalid Statement Error: {err}")
+            raise StatementError(
+                message=f"Invalid Statement Error: {err}"
+            )
+        except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
+            raise StatementError(
+                message=f"Sentence Error: {err}"
+            )
+        except RuntimeError as err:
+            raise ProviderError(
+                message=f"Sentence Error: {err}"
+            )
         except Exception as err:
             raise Exception(f"Error on Query: {err}")
-        return self._result
+        return result
+
+    async def fetchval(self, sentence: str, column: int = 0, *args):
+        result = None
+        await self.valid_operation(sentence)
+        try:
+            result = await self._connection.fetchval(sentence, column=column, *args)
+        except (
+            asyncpg.exceptions.InvalidSQLStatementNameError,
+            asyncpg.exceptions.UndefinedTableError,
+        ) as err:
+            raise StatementError(
+                message=f"Invalid Statement Error: {err}"
+            )
+        except (PostgresSyntaxError, UndefinedColumnError, PostgresError) as err:
+            raise StatementError(
+                message=f"Sentence Error: {err}"
+            )
+        except RuntimeError as err:
+            raise ProviderError(
+                message=f"Sentence Error: {err}"
+            )
+        except Exception as err:
+            raise Exception(f"Error on Query: {err}")
+        return result
 
     """
     Transaction Context
@@ -844,7 +891,7 @@ class pg(SQLProvider, DBCursorBackend):
             return result
         except asyncpg.exceptions.UndefinedTableError:
             error = "Error on Copy, Table doesnt exists: {}".format(str(table))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
@@ -852,7 +899,7 @@ class pg(SQLProvider, DBCursorBackend):
             error = "Error on Copy, Invalid Statement Error: {}".format(
                 str(err))
             self._loop.call_exception_handler(err)
-            raise StatementError(error)
+            raise StatementError(message=error)
         except Exception as err:
             error = "Error on Table Copy: {}".format(str(err))
             raise Exception(error)
@@ -882,7 +929,7 @@ class pg(SQLProvider, DBCursorBackend):
             return result
         except asyncpg.exceptions.UndefinedTableError:
             error = "Error on Copy, Table doesnt exists: {}".format(str(table))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except (
             asyncpg.exceptions.InvalidSQLStatementNameError,
             asyncpg.exceptions.UndefinedTableError,
@@ -890,7 +937,7 @@ class pg(SQLProvider, DBCursorBackend):
             error = "Error on Copy, Invalid Statement Error: {}".format(
                 str(err))
             self._loop.call_exception_handler(err)
-            raise StatementError(error)
+            raise StatementError(message=error)
         except Exception as err:
             error = "Error on Table Copy: {}".format(str(err))
             raise Exception(error)
@@ -917,17 +964,17 @@ class pg(SQLProvider, DBCursorBackend):
             error = "Error on Copy: {}, Table doesnt exists: {}".format(
                 str(err), str(table)
             )
-            raise StatementError(error)
+            raise StatementError(message=error)
         except (InvalidSQLStatementNameError, UndefinedColumnError) as err:
             error = "Error on Copy, Invalid Statement Error: {}".format(
                 str(err))
-            raise StatementError(error)
+            raise StatementError(message=error)
         except asyncpg.exceptions.UniqueViolationError as err:
             error = "Error on Copy, Constraint Violated: {}".format(str(err))
             raise DataError(error)
         except asyncpg.exceptions.InterfaceError as err:
             error = "Error on Copy into Table Function: {}".format(str(err))
-            raise ProviderError(error)
+            raise ProviderError(message=error)
         except Exception as err:
             error = "Error on Table Copy: {}".format(str(err))
             raise Exception(error)
@@ -987,7 +1034,7 @@ class pg(SQLProvider, DBCursorBackend):
                 else:
                     return False
             except Exception as err:
-                raise ProviderError(f"Error in Object Creation: {err!s}")
+                raise ProviderError(message=f"Error in Object Creation: {err!s}")
         else:
             raise RuntimeError(f'SQLite: invalid Object type {object!s}')
 

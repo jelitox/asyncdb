@@ -99,8 +99,6 @@ class DefaultEncoder(JSONEncoder):
             return str(obj)
         elif isinstance(obj, timedelta):
             return obj.__str__()
-        elif hasattr(obj, "hex"):
-            return obj.hex
         elif isinstance(obj, Enum):
             if not obj.value:
                 return None
@@ -109,8 +107,9 @@ class DefaultEncoder(JSONEncoder):
         elif isinstance(obj, uuid.UUID):
             try:
                 return str(obj)
-            except Exception as e:
-                return obj.hex
+            except ValueError:
+                if uobj := uuid.UUID(obj, version=4):
+                    return str(uobj)
         elif isinstance(obj, decimal.Decimal):
             return float(obj)
         elif isinstance(obj, Decimal):
@@ -119,9 +118,11 @@ class DefaultEncoder(JSONEncoder):
             return obj.isoformat()
         elif isinstance(obj, asyncpg.Range):
             return [obj.lower, obj.upper]
+        elif hasattr(obj, "hex"):
+            return obj.hex
         else:
             # return str(obj)
-            raise TypeError("%r is not JSON serializable" % obj)
+            raise TypeError(f"{obj!r} is not JSON serializable")
 
 
 class BaseEncoder:

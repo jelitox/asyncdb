@@ -31,14 +31,14 @@ async def shutdown(loop: asyncio.AbstractEventLoop, signal: Any = None):
             for task in asyncio.all_tasks()
             if task is not asyncio.current_task() and not task.done()
         ]
-        [task.cancel() for task in tasks]
+        status = [task.cancel() for task in tasks]
         logging.warning(f"Cancelling {len(tasks)} outstanding tasks")
-        await asyncio.gather(*tasks, loop=loop, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
         logging.warning('Asyncio Shutdown: Done graceful shutdown of subtasks')
     except asyncio.CancelledError:
         print("All Tasks has been canceled")
     except Exception as err:
-        print("Asyncio Generic Error", err)
+        print("Asyncio Generic Error: ", err)
     finally:
         loop.stop()
 
@@ -48,7 +48,7 @@ def default_exception_handler(loop: asyncio.AbstractEventLoop, context: Any):
     # first, handle with default handler
     if isinstance(context, Exception):
         # is a basic exception
-        logging.exception(f"Exception {context!s}")
+        logging.exception(f"Exception {context!s}", stack_info=True)
         raise type(context)
     else:
         loop.default_exception_handler(context)
@@ -62,15 +62,18 @@ def default_exception_handler(loop: asyncio.AbstractEventLoop, context: Any):
             logging.exception(f"Exception raised by Task {task}, Error: {msg}")
             raise Exception(f"{msg}: task: {task}")
         if not isinstance(context["exception"], asyncio.CancelledError):
-            task = context.get("task", context["future"])
-            msg = context.get("exception", context["message"])
-            exception = type(task.exception())
             try:
-                logging.exception(
-                    f"{exception.__name__!s}*{msg}* over task {task}")
-                raise exception(msg)
-            except Exception as err:
-                logging.exception(err)
+                task = context.get("task", context["future"])
+                msg = context.get("exception", context["message"])
+                exception = type(task.exception())
+                try:
+                    logging.exception(
+                        f"{exception.__name__!s}*{msg}* over task {task}")
+                    raise exception()
+                except Exception as err:
+                    logging.exception(err)
+            except KeyError:
+                logging.exception(context, stack_info=True)
 
 
 class AsyncDBException(Exception):
@@ -87,10 +90,10 @@ class AsyncDBException(Exception):
         )
         self.message = message
         self.code = code
-        super(AsyncDBException, self).__init__(message)
+        super().__init__(message)
 
     def __repr__(self):
-        return f"{__name__}(message={self.message})"
+        return f"{__name__}({self.args!r})"
 
     def __str__(self):
         return f"{__name__}: {self.message}"

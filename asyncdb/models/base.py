@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import types
 import logging
+import inspect
 import traceback
+import operator
 import rapidjson as to_json
 from dataclasses import Field as ff
 from dataclasses import (
@@ -25,7 +27,8 @@ from typing import (
     Dict,
     Optional,
     Union,
-    Any
+    Any,
+    Iterable
 )
 from asyncdb.utils import Msg
 from asyncdb.utils.types import (
@@ -33,10 +36,11 @@ from asyncdb.utils.types import (
     MODEL_TYPES,
     JSON_TYPES
 )
-from asyncdb.exceptions import NoDataFound
+from asyncdb.exceptions import NoDataFound, ProviderError, StatementError
 from asyncdb.utils.encoders import DefaultEncoder
 from asyncdb.utils import module_exists
 from asyncdb.providers.interfaces import ConnectionBackend
+
 
 @dataclass
 class ValidationError:
@@ -413,20 +417,23 @@ class Model(metaclass=ModelMeta):
                     new_val = f.type(**value)
                     setattr(self, f.name, new_val)
             elif isinstance(value, list):
-                sub_type = f.type.__args__[0]
-                if is_dataclass(sub_type):
-                    # for every item
-                    items = []
-                    for item in value:
-                        try:
-                            if isinstance(item, dict):
-                                items.append(sub_type(**item))
-                            else:
-                                items.append(item)
-                        except Exception as err:
-                            logging.exception(err)
-                            continue
-                    setattr(self, f.name, items)
+                try:
+                    sub_type = f.type.__args__[0]
+                    if is_dataclass(sub_type):
+                        # for every item
+                        items = []
+                        for item in value:
+                            try:
+                                if isinstance(item, dict):
+                                    items.append(sub_type(**item))
+                                else:
+                                    items.append(item)
+                            except Exception as err:
+                                logging.exception(err)
+                                continue
+                        setattr(self, f.name, items)
+                except AttributeError:
+                    setattr(self, f.name, value)
             else:
                 continue
         try:
@@ -447,8 +454,9 @@ class Model(metaclass=ModelMeta):
                 # default is a function:
                 try:
                     setattr(self, name, field.default())
-                except TypeError:
-                    logging.warning(f'Error Calling Value on {field} with name {name}')
+                except TypeError as err:
+                    logging.warning(
+                        f'Error Calling Value on {field} with name {name}')
                     setattr(self, name, None)
             # first check: data type hint
             val_type = type(val)
@@ -537,17 +545,17 @@ class Model(metaclass=ModelMeta):
 
     def create_field(self, name: str, value: Any) -> None:
         """create_field.
-        create a new Field on Model (when strict is False).  
+        create a new Field on Model (when strict is False).
         Args:
             name (str): name of the field
             value (Any): value to be assigned.
-        """  
+        """
         f = Field(required=False, default=value)
         f.name = name
         f.type = type(value)
         self.__columns__[name] = f
         setattr(self, name, value)
-        
+
     def set(self, name: str, value: Any) -> None:
         """set.
         Alias for Create Field.
@@ -621,6 +629,8 @@ class Model(metaclass=ModelMeta):
                     model=self, fields=self.columns()
                 )
                 return result
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -641,6 +651,10 @@ class Model(metaclass=ModelMeta):
                     model=self, connection=conn, fields=self.columns()
                 )
                 return result
+            except StatementError as err:
+                raise
+            except ProviderError:
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -664,6 +678,10 @@ class Model(metaclass=ModelMeta):
                     **kwargs
                 )
                 return result
+            except StatementError:
+                raise
+            except ProviderError:
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -690,8 +708,10 @@ class Model(metaclass=ModelMeta):
                             self.Meta.name, kwargs
                         )
                     )
-            except NoDataFound as err:
-                raise NoDataFound(err)
+            except NoDataFound:
+                raise
+            except (StatementError, ProviderError):
+                raise
             except AttributeError as err:
                 raise Exception(
                     "Error on get {}: {}".format(self.Meta.name, err))
@@ -720,8 +740,10 @@ class Model(metaclass=ModelMeta):
                         "No Data on {} with condition {}".format(
                             self.Meta.name, kwargs)
                     )
-            except NoDataFound as err:
-                raise NoDataFound(err)
+            except NoDataFound:
+                raise
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -745,8 +767,10 @@ class Model(metaclass=ModelMeta):
                         "No Data on {} with condition {}".format(
                             self.Meta.name, kwargs)
                     )
-            except NoDataFound as err:
-                raise NoDataFound(err)
+            except NoDataFound:
+                raise
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -772,6 +796,8 @@ class Model(metaclass=ModelMeta):
                 )
                 if result:
                     return [cls(**dict(r)) for r in result]
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -789,6 +815,8 @@ class Model(metaclass=ModelMeta):
                     model=cls, conditions=conditions, **kwargs
                 )
                 return result
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -808,6 +836,8 @@ class Model(metaclass=ModelMeta):
                     return [cls(**dict(r)) for r in result]
                 else:
                     return []
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 print(traceback.format_exc())
                 raise Exception(
@@ -831,8 +861,10 @@ class Model(metaclass=ModelMeta):
                     return [cls(**dict(r)) for r in result]
                 else:
                     return []
-            except NoDataFound as err:
-                raise NoDataFound(err)
+            except NoDataFound:
+                raise
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 logging.debug(traceback.format_exc())
                 raise Exception(
@@ -859,6 +891,8 @@ class Model(metaclass=ModelMeta):
             except AttributeError as err:
                 raise Exception(
                     "Error on get {}: {}".format(cls.Meta.name, err))
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 print(traceback.format_exc())
                 raise Exception(
@@ -873,6 +907,8 @@ class Model(metaclass=ModelMeta):
             try:
                 result = await cls.Meta.connection.mdl_all(model=cls, **kwargs)
                 return [cls(**dict(row)) for row in result]
+            except (StatementError, ProviderError):
+                raise
             except Exception as err:
                 print(traceback.format_exc())
                 raise Exception(
@@ -907,7 +943,8 @@ class Model(metaclass=ModelMeta):
 
     @classmethod
     def make_model(cls, name: str, schema: str = "public", fields: list = []):
-        cls = make_dataclass(name, fields, bases=(Model,))
+        parent = inspect.getmro(cls)
+        cls = make_dataclass(name, fields, bases=(parent[0],))
         m = Meta()
         m.name = name
         m.schema = schema
@@ -945,7 +982,8 @@ class Model(metaclass=ModelMeta):
                 except KeyError:
                     dtype = str
                 fields.append((column["name"], dtype, col))
-        cls = make_dataclass(name, fields, bases=(Model,))
+        parent = inspect.getmro(cls)
+        cls = make_dataclass(name, fields, bases=(parent[0],))
         m = Meta()
         m.name = name
         m.schema = schema
