@@ -87,7 +87,7 @@ setup(
         "python-magic==0.4.18",
         "psycopg2-binary>=2.9.1",
         "pgpy==0.5.3",
-        "botocore==1.24.21",
+        "botocore==1.27.66",
         "boto3==1.21.21",
         "aiobotocore==2.3.4",
         "xlrd==2.0.1",
