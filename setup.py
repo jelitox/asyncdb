@@ -103,7 +103,7 @@ setup(
         "datatable==1.0.0",
         "polars==0.13.23",
         "pyarrow==4.0.1",
-        "connectorx==0.2.3",
+        "connectorx==0.3.0",
         "openpyxl==3.0.9",
         "pymssql==2.2.1",
         "pymongo>=3.12.1",
