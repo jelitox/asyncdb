@@ -88,7 +88,7 @@ setup(
         "psycopg2-binary>=2.9.1",
         "pgpy==0.5.3",
         "botocore==1.24.21",
-        "boto3==1.21.21",
+        "boto3==1.24.68",
         "aiobotocore==2.3.4",
         "xlrd==2.0.1",
         "bs4==0.0.1",
