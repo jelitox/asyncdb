@@ -108,7 +108,7 @@ setup(
         "numpy==1.23.4",
         "cryptography==38.0.2",
         "aiohttp==3.8.3",
-        "asyncpg==0.26.0",
+        "asyncpg==0.27.0",
         "uvloop==0.17.0",
         "asyncio==3.4.3",
         "cchardet==2.1.7",
@@ -172,7 +172,7 @@ setup(
             "psycopg2-binary>=2.9.1",
         ],
         "postgresql": [
-            "asyncpg==0.26.0",
+            "asyncpg==0.27.0",
         ],
         "mysql": [
             "asyncmy==0.2.5",
@@ -240,7 +240,7 @@ setup(
             "aioredis==2.0.1",
             "hiredis==2.0.0",
             "objectpath==0.6.1",
-            "asyncpg==0.26.0",
+            "asyncpg==0.27.0",
             "rethinkdb==2.4.9",
             "aiopg==1.3.5",
             "psycopg2-binary>=2.9.1",
