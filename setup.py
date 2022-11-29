@@ -204,7 +204,7 @@ setup(
             "sqlalchemy==1.4.42",
         ],
         "elasticsearch": [
-            "elasticsearch[async]==7.15.1",
+            "elasticsearch[async]==8.5.2",
         ],
         "mongodb": [
             "pymongo==4.3.3",
