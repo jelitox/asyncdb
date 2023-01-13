@@ -119,7 +119,7 @@ setup(
         "iso8601==1.1.0",
         "pgpy==0.6.0",
         "python-magic==0.4.27",
-        "dateparser==1.1.4",
+        "dateparser==1.1.6",
         "python-datamodel>=0.1.14",
         "aiosqlite>=0.15.0",
     ],
