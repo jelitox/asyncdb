@@ -98,7 +98,7 @@ setup(
     license=__license__,
     setup_requires=[
         "wheel==0.38.4",
-        "Cython==0.29.32",
+        "Cython==0.29.33",
     ],
     install_requires=[
         "numpy==1.23.4",
